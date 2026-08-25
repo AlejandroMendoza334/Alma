@@ -35,13 +35,26 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
+  # Inyección de dependencias
+  get_it: ^7.7.0
+
+  # Notificaciones locales
+  flutter_local_notifications: ^17.1.2
+
+  # Iconos de Cupertino
   cupertino_icons: ^1.0.8
+  google_fonts: ^6.1.0
+  http: ^1.2.2
+  shared_preferences: ^2.2.2
+  audioplayers: ^6.0.0
+  flutter_secure_storage: ^9.2.2
+  workmanager: ^0.7.0
+  font_awesome_flutter: ^10.7.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.4
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -64,6 +77,19 @@ flutter:
 # Registro de Assets locales
   assets:
     - assets/data/afirmaciones.json
+    - assets/audio/
+    - assets/icon.jpg
+    - assets/alma_icon.png
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  web:
+    generate: true
+    image_path: "icon.jpg"
+  image_path: "icon.jpg"
+  adaptive_icon_background: "#0D0C1D"
+  adaptive_icon_foreground: "icon.jpg"
 
   # To add assets to your application, add an assets section, like this:
   # assets:
