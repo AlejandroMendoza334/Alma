@@ -47,8 +47,9 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.2.2
   audioplayers: ^6.0.0
+  timezone: ^0.9.4
+  flutter_timezone: ^5.1.0
   flutter_secure_storage: ^9.2.2
-  workmanager: ^0.7.0
   font_awesome_flutter: ^10.7.0
 
 dev_dependencies:

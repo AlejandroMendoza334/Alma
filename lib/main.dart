@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:mind_flow/features/affirmations/data/repositories/affirmation_repository_impl.dart';
 import 'package:mind_flow/features/affirmations/domain/usecases/get_daily_affirmation.dart';
 import 'package:mind_flow/features/notifications/domain/repositories/notification_repository_impl.dart';
@@ -13,8 +16,33 @@ import 'views/mood_view.dart';
 import 'views/chat_view.dart';
 import 'views/settings_view.dart';
 
-void main() {
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+    FlutterLocalNotificationsPlugin();
+
+final NotificationRepositoryImpl notificationRepository =
+    NotificationRepositoryImpl(
+  flutterLocalNotificationsPlugin: flutterLocalNotificationsPlugin,
+);
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Carga la base de datos de zonas horarias y fija la del dispositivo.
+  // Sin setLocalLocation(), tz.local queda en UTC y zonedSchedule agenda
+  // las notificaciones a la hora equivocada de forma silenciosa.
+  tz.initializeTimeZones();
+  try {
+    final TimezoneInfo deviceTimeZone = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(deviceTimeZone.identifier));
+  } catch (e) {
+    debugPrint('[Notifications] No se pudo obtener la zona horaria del dispositivo: $e');
+  }
+
+  // Inicializa el plugin y solicita el permiso de notificaciones (Android 13+)
+  // en el orden correcto, una sola vez, aquí al arrancar la app.
+  await notificationRepository.init();
+  await notificationRepository.requestPermission();
+
   runApp(const AlmaApp());
 }
 
@@ -191,11 +219,15 @@ class _AlmaAppState extends State<AlmaApp> {
     onApiKeyChanged: (k) => setState(() => _apiKey = k),
     onBack: () => setState(() => _currentView = ViewState.home),
     scheduleDailyNotification: ScheduleDailyNotification(
-  notificationRepository: NotificationRepositoryImpl(FlutterLocalNotificationsPlugin()),
+  // Reutiliza el repositorio ya inicializado en main(); crear aquí una
+  // instancia nueva de FlutterLocalNotificationsPlugin dejaba el plugin
+  // sin initialize() y sin el permiso de Android 13+ solicitado.
+  notificationRepository: notificationRepository,
   getDailyAffirmation: GetDailyAffirmation(
-    AffirmationRepositoryImpl(), 
+    AffirmationRepositoryImpl(),
   ),
 ),
+    notificationRepository: notificationRepository,
   );
     }
   }

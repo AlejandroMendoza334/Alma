@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/affirmations/data/models/models.dart';
+import '../features/notifications/domain/entities/daily_notification.dart';
+import '../features/notifications/domain/repositories/notification_repository.dart';
 import '../features/notifications/domain/usecases/schedule_daily_notification.dart';
 import '../services/theme.dart';
 import '../services/api_validation_service.dart';
@@ -13,6 +15,7 @@ class SettingsView extends StatefulWidget {
   final Function(String) onApiKeyChanged;
   final VoidCallback onBack;
   final ScheduleDailyNotification scheduleDailyNotification;
+  final NotificationRepository notificationRepository;
 
   const SettingsView({
     super.key,
@@ -22,6 +25,7 @@ class SettingsView extends StatefulWidget {
     required this.onApiKeyChanged,
     required this.onBack,
     required this.scheduleDailyNotification,
+    required this.notificationRepository,
   });
 
   @override
@@ -35,8 +39,8 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
   bool _isValidating = false;
   bool? _isKeyValid;
   bool _notificationsEnabled = true;
-  String _notificationPermission = 'default';
-  
+  bool _hasNotificationPermission = false;
+
   // Nuevas variables para múltiples frecuencias y horas
   int _frequency = 1; 
   List<TimeOfDay> _selectedTimes = [const TimeOfDay(hour: 8, minute: 0)];
@@ -70,11 +74,15 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
     });
   }
 
-  Future<void> _savePreferences() async {
+  // Guarda preferencias y (re)programa las notificaciones. Devuelve el
+  // resultado real de la programación (hora exacta + si cae hoy o mañana)
+  // para mostrarlo en un SnackBar — así no adivinamos en la UI algo que el
+  // repositorio ya calculó, y evitamos que ambos lados se desincronicen.
+  Future<List<ScheduledNotificationResult>?> _savePreferences() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('auto_affirmations', _notificationsEnabled);
     await prefs.setInt('notif_frequency', _frequency);
-    
+
     // Guardamos cada hora de la lista de forma individual en SharedPreferences
     for (int i = 0; i < _selectedTimes.length; i++) {
       await prefs.setInt('notif_hour_$i', _selectedTimes[i].hour);
@@ -84,12 +92,22 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
     await prefs.setString('api_key', _apiKeyController.text);
     widget.onApiKeyChanged(_apiKeyController.text);
 
-    if (_notificationsEnabled) {
-      // Llamamos al caso de uso pasando la lista completa de horarios
-      await widget.scheduleDailyNotification.call(
-        times: _selectedTimes,
-      );
+    if (!_notificationsEnabled) {
+      // Si el usuario apaga el switch, cancela lo que ya estuviera
+      // programado — si no, seguiría sonando aunque la app diga "apagado".
+      await widget.notificationRepository.cancelAll();
+      return null;
     }
+
+    return widget.scheduleDailyNotification.call(times: _selectedTimes);
+  }
+
+  String _describeSchedule(List<ScheduledNotificationResult> results) {
+    final parts = results.map((result) {
+      final label = TimeOfDay.fromDateTime(result.fireAt).format(context);
+      return '$label (${result.isToday ? "hoy" : "mañana"})';
+    }).join(' · ');
+    return 'Programado: $parts';
   }
 
   void _updateFrequency(int newFrequency) {
@@ -107,14 +125,16 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
     });
   }
 
-  void _checkNotificationPermission() {
-    setState(() {
-      _notificationPermission = 'granted';
-    });
+  Future<void> _checkNotificationPermission() async {
+    final granted = await widget.notificationRepository.hasPermission();
+    if (!mounted) return;
+    setState(() => _hasNotificationPermission = granted);
   }
 
   Future<void> _requestNotificationPermission() async {
-    setState(() => _notificationPermission = 'granted');
+    final granted = await widget.notificationRepository.requestPermission();
+    if (!mounted) return;
+    setState(() => _hasNotificationPermission = granted);
   }
 
   Future<void> _verifyApiKey() async {
@@ -149,32 +169,62 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
         child: Column(
           children: [
             // Top Bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: const BoxDecoration(
+                color: AlmaTheme.card,
+                border: Border(bottom: BorderSide(color: AlmaTheme.border)),
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  TextButton(
+                  // Mismo tratamiento de "pill" que Guardar, pero en outline
+                  // para que quede claro que es la acción secundaria.
+                  OutlinedButton(
                     onPressed: widget.onBack,
-                    child: Text('Cancelar', style: GoogleFonts.nunito(color: AlmaTheme.mutedForeground, fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AlmaTheme.mutedForeground,
+                      side: const BorderSide(color: AlmaTheme.border),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    ),
+                    child: Text(
+                      'Cancelar',
+                      style: GoogleFonts.nunito(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
                   ),
                   Text('Ajustes', style: GoogleFonts.lora(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                  TextButton(
-                    onPressed: _apiKeyController.text.trim().isEmpty
-                        ? null
-                        : () async {
-                            await _savePreferences();
-                            widget.onBack();
-                          },
+                  // Botón sólido a propósito: antes era un TextButton que se veía
+                  // "apagado" (gris) mientras la API Key estuviera vacía, sin importar
+                  // en qué pestaña estuvieras — parecía deshabilitado y era fácil
+                  // olvidar tocarlo al guardar horarios de notificaciones.
+                  ElevatedButton(
+                    onPressed: () async {
+                      final results = await _savePreferences();
+                      if (!mounted) return;
+                      if (results != null && results.isNotEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(_describeSchedule(results), style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
+                            backgroundColor: AlmaTheme.primary,
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                        await Future.delayed(const Duration(seconds: 3));
+                      }
+                      if (!mounted) return;
+                      widget.onBack();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AlmaTheme.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    ),
                     child: Text(
-                      'Guardar', 
-                      style: GoogleFonts.nunito(
-                        color: _apiKeyController.text.trim().isEmpty 
-                            ? AlmaTheme.mutedForeground 
-                            : AlmaTheme.primary, 
-                        fontWeight: FontWeight.bold, 
-                        fontSize: 14,
-                      ),
+                      'Guardar',
+                      style: GoogleFonts.nunito(fontWeight: FontWeight.bold, fontSize: 14),
                     ),
                   ),
                 ],
@@ -286,8 +336,7 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
   }
 
   Widget _buildNotifsTab() {
-    final bool isDenied = _notificationPermission == 'denied';
-    final bool isGranted = _notificationPermission == 'granted';
+    final bool isGranted = _hasNotificationPermission;
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -310,13 +359,13 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: isDenied ? Colors.red.withOpacity(0.2) : (isGranted ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2)),
+                      color: isGranted ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      isDenied ? 'Bloqueadas' : (isGranted ? 'Activas' : 'Pendientes'),
+                      isGranted ? 'Activas' : 'Pendientes',
                       style: GoogleFonts.nunito(
-                        color: isDenied ? Colors.redAccent : (isGranted ? Colors.greenAccent : Colors.orangeAccent),
+                        color: isGranted ? Colors.greenAccent : Colors.orangeAccent,
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                       ),
@@ -326,12 +375,12 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
               ),
               const SizedBox(height: 8),
               Text(
-                isDenied
-                    ? 'Bloqueaste las notificaciones. Puedes cambiar esto en la configuración de tu dispositivo.'
-                    : 'Permite que Alma te envíe mensajes de bienestar diariamente.',
+                isGranted
+                    ? 'Permite que Alma te envíe mensajes de bienestar diariamente.'
+                    : 'Si el botón no muestra el diálogo del sistema, puede que ya lo hayas rechazado antes — actívalo desde los ajustes de notificaciones del dispositivo.',
                 style: GoogleFonts.nunito(color: AlmaTheme.mutedForeground, fontSize: 12),
               ),
-              if (!isGranted && !isDenied) ...[
+              if (!isGranted) ...[
                 const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: _requestNotificationPermission,
