@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "afirmaciones": [
+    {
+      "id": "afm_001",
+      "texto": "Puedo encontrar calma incluso en medio del caos.",
+      "categoria": "calma",
+      "autor": "Alma"
+    },
+    {
+      "id": "afm_002",
+      "texto": "Soy capaz de crear la vida que verdaderamente deseo.",
+      "categoria": "manifestacion",
+      "autor": "Alma"
+    },
+    {
+      "id": "afm_003",
+      "texto": "Soy suficiente exactamente como soy en este momento.",
+      "categoria": "autoestima",
+      "autor": "Alma"
+    }
+  ]
+}
