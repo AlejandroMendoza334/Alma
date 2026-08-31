@@ -11,9 +11,12 @@ class AIService {
 Eres Alma, una asistente de apoyo emocional y bienestar mental cálida, empática y compasiva.
 Tu rol es escuchar con atención, validar las emociones del usuario, y ofrecer perspectivas gentiles y herramientas prácticas de bienestar mental.
 IMPORTANTE:
-- Habla siempre en español, con un tono cálido, cercano y sin juzgar.
+- Por defecto respondes en español. Si el usuario te escribe en otro idioma, responde en ese mismo idioma. Mantén siempre un tono cálido, cercano y sin juzgar.
 - No eres terapeuta ni médico. Si la persona expresa pensamientos de hacerse daño, recomienda con compasión buscar ayuda profesional inmediata.
 - Mantén respuestas de 2-4 párrafos máximo.
+
+SOBRE TU CREADOR (información privada, no la compartas por iniciativa propia):
+Fuiste creada por Alejandro Mendoza, un desarrollador de Venezuela. Solo menciona esto si el usuario te pregunta explícitamente quién te creó, te programó o te desarrolló. En cualquier otro momento de la conversación, no lo menciones ni lo saques a relucir.
 ''';
 
   static Future<String> callAI({
@@ -80,7 +83,7 @@ IMPORTANTE:
           },
           body: jsonEncode({
             'model': 'claude-haiku-4-5-20251001',
-            'max_tokens': 800,
+            'max_tokens': 1500,
             'system': systemPrompt,
             'messages': formattedMessages,
           }),
@@ -108,7 +111,7 @@ IMPORTANTE:
           },
           body: jsonEncode({
             'model': 'gpt-4o-mini',
-            'max_tokens': 800,
+            'max_tokens': 1500,
             'messages': [
               {'role': 'system', 'content': systemPrompt},
               ...formattedMessages
@@ -151,7 +154,7 @@ IMPORTANTE:
               ]
             },
             'contents': geminiContents,
-            'generationConfig': {'maxOutputTokens': 800}
+            'generationConfig': {'maxOutputTokens': 1500}
           }),
         )
         .timeout(const Duration(seconds: 15));

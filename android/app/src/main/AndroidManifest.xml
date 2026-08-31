@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- El proyecto solo declaraba INTERNET en src/debug/AndroidManifest.xml
+         (puesto ahí por la plantilla de Flutter solo para hot reload/VM
+         service). Sin declararlo aquí en el manifest principal, el APK de
+         release queda SIN permiso de red: toda llamada HTTP (validar API
+         key, google_fonts, etc.) falla con "Failed host lookup" aunque el
+         teléfono tenga internet perfectamente. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Requerido para que flutter_local_notifications pueda reprogramar las
          notificaciones diarias después de que el dispositivo se reinicie. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

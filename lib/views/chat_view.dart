@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mind_flow/views/widgets/breathing_exercise_card.dart';
 import '../features/affirmations/data/models/models.dart';
@@ -28,7 +29,7 @@ class ChatView extends StatefulWidget {
   final String apiKey;
   final String? initialMoodContext;
   final Function(ViewState) onNavigate;
-  
+
   // Opcional: si quieres persistir o recibir un historial externo
   static List<ExtendedChatMessage> globalChatHistory = [];
 
@@ -49,6 +50,7 @@ class _ChatViewState extends State<ChatView> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isLoading = false;
+  bool _hasText = false;
 
   @override
   void initState() {
@@ -60,6 +62,10 @@ class _ChatViewState extends State<ChatView> {
       _messages = [];
       _initializeChat();
     }
+    _controller.addListener(() {
+      final hasText = _controller.text.trim().isNotEmpty;
+      if (hasText != _hasText) setState(() => _hasText = hasText);
+    });
   }
 
   @override
@@ -110,13 +116,23 @@ class _ChatViewState extends State<ChatView> {
     _scrollToBottom();
 
     final lowerText = text.toLowerCase();
-    bool triggersBreathing = lowerText.contains('respirar') || 
-                             lowerText.contains('ansiedad') || 
-                             lowerText.contains('estresado') || 
-                             lowerText.contains('calmar');
+    bool triggersBreathing = lowerText.contains('respirar') ||
+        lowerText.contains('ansiedad') ||
+        lowerText.contains('estresado') ||
+        lowerText.contains('calmar');
 
     try {
-      final standardMessages = _messages.map((m) => ChatMessage(role: m.role, content: m.content)).toList();
+      // Solo se reenvían los últimos turnos (y solo los de texto real, sin
+      // las tarjetas de respiración) — antes se mandaba TODO el historial
+      // acumulado desde que se abrió la app, así que una sola respuesta
+      // rara o fuera de tema se quedaba contaminando cada mensaje
+      // siguiente para siempre, hasta cerrar la app.
+      const maxHistoryMessages = 20;
+      final textMessages = _messages.where((m) => m.type == ChatMessageType.text).toList();
+      final recentMessages = textMessages.length > maxHistoryMessages
+          ? textMessages.sublist(textMessages.length - maxHistoryMessages)
+          : textMessages;
+      final standardMessages = recentMessages.map((m) => ChatMessage(role: m.role, content: m.content)).toList();
 
       final response = await AIService.callAI(
         provider: widget.provider,
@@ -130,7 +146,7 @@ class _ChatViewState extends State<ChatView> {
 
       setState(() {
         _messages.add(ExtendedChatMessage(role: 'assistant', content: response));
-        
+
         if (triggersBreathing) {
           _messages.add(
             ExtendedChatMessage(
@@ -146,7 +162,7 @@ class _ChatViewState extends State<ChatView> {
                 } else {
                   replyMessage = 'Entiendo perfectamente, a veces la tensión no se va a la primera. ¿Quieres que conversemos sobre qué te agobia?';
                 }
-                
+
                 // 🛠️ CORRECCIÓN: Añadirlo directamente como asistente sin simular que lo escribiste tú
                 setState(() {
                   _messages.add(ExtendedChatMessage(role: 'assistant', content: replyMessage));
@@ -177,6 +193,15 @@ class _ChatViewState extends State<ChatView> {
       setState(() => _isLoading = false);
       _scrollToBottom();
     }
+  }
+
+  void _resetConversation() {
+    setState(() {
+      _messages = [];
+      ChatView.globalChatHistory = [];
+      _initializeChat();
+    });
+    _scrollToBottom();
   }
 
   void _scrollToBottom() {
@@ -226,29 +251,30 @@ class _ChatViewState extends State<ChatView> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
             AlmaTheme.background,
-            AlmaTheme.background.withOpacity(0.95),
-            const Color(0xFF121216),
+            Color(0xFF17152E),
+            Color(0xFF121020),
           ],
         ),
       ),
       child: Column(
         children: [
+          _buildChatHeader(),
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               itemCount: _messages.length + (_isLoading ? 1 : 0),
               itemBuilder: (context, index) {
                 if (index == _messages.length && _isLoading) {
                   return _buildThinkingBubble();
                 }
-                
+
                 final message = _messages[index];
                 final isUser = message.role == 'user';
 
@@ -280,7 +306,7 @@ class _ChatViewState extends State<ChatView> {
                     ),
                   );
                 }
-                
+
                 return _buildMessageBubble(message, isUser);
               },
             ),
@@ -291,69 +317,111 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  Widget _buildMessageBubble(ExtendedChatMessage message, bool isUser) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+  Widget _buildChatHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+      decoration: BoxDecoration(
+        color: AlmaTheme.card.withOpacity(0.6),
+        border: Border(bottom: BorderSide(color: AlmaTheme.border.withOpacity(0.5))),
+      ),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (!isUser) ...[
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: AlmaTheme.primary.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 2)),
-                ],
-              ),
-              child: ClipOval(
-                child: Image.asset(
-                  'assets/alma_icon.png',
-                  width: 50,
-                  height: 30,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 50,
-                    height: 20,
-                    decoration: const BoxDecoration(color: AlmaTheme.primary, shape: BoxShape.circle),
-                    child: const Icon(Icons.psychology_outlined, color: Colors.white, size: 18),
-                  ),
+          _buildAvatar(size: 38),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Alma', style: GoogleFonts.lora(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                Text(
+                  'Tu espacio seguro para hablar',
+                  style: GoogleFonts.nunito(fontSize: 11.5, color: AlmaTheme.mutedForeground),
                 ),
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isUser ? AlmaTheme.primary : AlmaTheme.card,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(isUser ? 18 : 4),
-                  bottomRight: Radius.circular(isUser ? 4 : 18),
-                ),
-                border: isUser ? null : Border.all(color: AlmaTheme.border.withOpacity(0.5), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Text(
-                message.content,
-                style: GoogleFonts.nunito(
-                  fontSize: 14.5,
-                  height: 1.45,
-                  color: isUser ? AlmaTheme.primaryForeground : Colors.white.withOpacity(0.95),
-                ),
-              ),
+              ],
             ),
           ),
-          if (isUser) const SizedBox(width: 24),
+          IconButton(
+            onPressed: _resetConversation,
+            tooltip: 'Nueva conversación',
+            icon: const Icon(Icons.refresh_rounded, size: 20, color: AlmaTheme.mutedForeground),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar({double size = 40}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        'assets/alma_icon.png',
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) =>
+            Icon(Icons.auto_awesome_rounded, color: AlmaTheme.primary, size: size * 0.7),
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(ExtendedChatMessage message, bool isUser) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (!isUser) ...[
+                _buildAvatar(size: 34),
+                const SizedBox(width: 10),
+              ],
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: isUser
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [AlmaTheme.primary, Color(0xFF6A3FE0)],
+                          )
+                        : null,
+                    color: isUser ? null : AlmaTheme.card,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight: const Radius.circular(18),
+                      bottomLeft: Radius.circular(isUser ? 18 : 4),
+                      bottomRight: Radius.circular(isUser ? 4 : 18),
+                    ),
+                    border: isUser ? null : Border.all(color: AlmaTheme.border.withOpacity(0.5), width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isUser ? AlmaTheme.primary : Colors.black).withOpacity(isUser ? 0.25 : 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    message.content,
+                    style: GoogleFonts.nunito(
+                      fontSize: 14.5,
+                      height: 1.5,
+                      color: isUser ? AlmaTheme.primaryForeground : Colors.white.withOpacity(0.95),
+                    ),
+                  ),
+                ),
+              ),
+              if (isUser) const SizedBox(width: 4),
+            ],
+          ),
+          if (!isUser)
+            Padding(
+              padding: const EdgeInsets.only(left: 44, top: 4),
+              child: _CopyButton(text: message.content),
+            ),
         ],
       ),
     );
@@ -361,16 +429,17 @@ class _ChatViewState extends State<ChatView> {
 
   Widget _buildThinkingBubble() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 18),
       child: Row(
         children: [
-          const SizedBox(width: 44),
+          _buildAvatar(size: 34),
+          const SizedBox(width: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: AlmaTheme.card,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AlmaTheme.border.withOpacity(0.3)),
+              border: Border.all(color: AlmaTheme.border.withOpacity(0.4)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -395,29 +464,33 @@ class _ChatViewState extends State<ChatView> {
 
   Widget _buildInputArea() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       decoration: BoxDecoration(
-        color: AlmaTheme.card.withOpacity(0.9),
+        color: AlmaTheme.card.withOpacity(0.95),
         border: Border(top: BorderSide(color: AlmaTheme.border.withOpacity(0.4), width: 1)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, -4)),
+          BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 12, offset: const Offset(0, -4)),
         ],
       ),
       child: SafeArea(
+        top: false,
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
               child: Container(
+                constraints: const BoxConstraints(minHeight: 46),
                 decoration: BoxDecoration(
                   color: AlmaTheme.background,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: AlmaTheme.border.withOpacity(0.4)),
+                  border: Border.all(color: AlmaTheme.border.withOpacity(0.5)),
                 ),
                 child: TextField(
                   controller: _controller,
                   style: GoogleFonts.nunito(color: Colors.white, fontSize: 14.5),
                   maxLines: 4,
                   minLines: 1,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     hintText: 'Cuéntale a Alma cómo te sientes...',
                     hintStyle: GoogleFonts.nunito(color: AlmaTheme.mutedForeground, fontSize: 13.5),
@@ -429,14 +502,78 @@ class _ChatViewState extends State<ChatView> {
               ),
             ),
             const SizedBox(width: 10),
-            Container(
-              decoration: const BoxDecoration(
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AlmaTheme.primary,
+                gradient: LinearGradient(
+                  colors: _hasText && !_isLoading
+                      ? const [AlmaTheme.primary, Color(0xFF6A3FE0)]
+                      : [AlmaTheme.border, AlmaTheme.border],
+                ),
+                boxShadow: _hasText && !_isLoading
+                    ? [BoxShadow(color: AlmaTheme.primary.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 3))]
+                    : null,
               ),
               child: IconButton(
-                onPressed: () => _sendMessage(),
-                icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                onPressed: _hasText && !_isLoading ? () => _sendMessage() : null,
+                icon: Icon(Icons.send_rounded, color: _hasText ? Colors.white : AlmaTheme.mutedForeground, size: 20),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Botón de copiar bajo los mensajes de Alma. Estado propio y aislado por
+// mensaje para que el ícono cambie a "Copiado" solo en el que se tocó, sin
+// afectar al resto de la conversación.
+class _CopyButton extends StatefulWidget {
+  final String text;
+
+  const _CopyButton({required this.text});
+
+  @override
+  State<_CopyButton> createState() => _CopyButtonState();
+}
+
+class _CopyButtonState extends State<_CopyButton> {
+  bool _copied = false;
+
+  Future<void> _handleCopy() async {
+    await Clipboard.setData(ClipboardData(text: widget.text));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: _copied ? null : _handleCopy,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _copied ? Icons.check_rounded : Icons.copy_rounded,
+              size: 14,
+              color: _copied ? Colors.greenAccent : AlmaTheme.mutedForeground,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _copied ? 'Copiado' : 'Copiar',
+              style: GoogleFonts.nunito(
+                fontSize: 11,
+                color: _copied ? Colors.greenAccent : AlmaTheme.mutedForeground,
               ),
             ),
           ],

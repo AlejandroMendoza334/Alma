@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -73,6 +74,31 @@ class _AlmaAppState extends State<AlmaApp> {
       category: "Inicio",
     );
     _loadAffirmationsFromJson();
+    _loadSavedSettings();
+  }
+
+  // La API key y el proveedor se guardaban en SharedPreferences al tocar
+  // Guardar, pero nunca se volvían a leer al abrir la app — por eso todo
+  // parecía "reiniciarse" al matar y reabrir la app, aunque seguía
+  // guardado en el dispositivo.
+  Future<void> _loadSavedSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedApiKey = prefs.getString('api_key') ?? '';
+    final savedProvider = prefs.getString('selected_provider');
+    if (!mounted) return;
+    setState(() {
+      // _apiKey se asigna primero y fuera de cualquier código que pueda
+      // lanzar una excepción (como el parseo del provider) — si esto
+      // llegara a fallar, no debe poder tumbarse la restauración de la key.
+      _apiKey = savedApiKey;
+      if (savedProvider != null) {
+        try {
+          _selectedProvider = ProviderAI.values.byName(savedProvider);
+        } catch (e) {
+          debugPrint('[Settings] Proveedor guardado inválido ("$savedProvider"): $e');
+        }
+      }
+    });
   }
 
   Future<void> _loadAffirmationsFromJson() async {

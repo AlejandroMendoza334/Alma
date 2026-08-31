@@ -38,6 +38,7 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
 
   bool _isValidating = false;
   bool? _isKeyValid;
+  String? _apiKeyMessage;
   bool _notificationsEnabled = true;
   bool _hasNotificationPermission = false;
 
@@ -82,6 +83,7 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('auto_affirmations', _notificationsEnabled);
     await prefs.setInt('notif_frequency', _frequency);
+    await prefs.setString('selected_provider', widget.selectedProvider.name);
 
     // Guardamos cada hora de la lista de forma individual en SharedPreferences
     for (int i = 0; i < _selectedTimes.length; i++) {
@@ -141,16 +143,18 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
     setState(() {
       _isValidating = true;
       _isKeyValid = null;
+      _apiKeyMessage = null;
     });
 
-    final isValid = await ApiValidationService.validateKey(
+    final result = await ApiValidationService.validateKey(
       widget.selectedProvider,
       _apiKeyController.text,
     );
 
     setState(() {
       _isValidating = false;
-      _isKeyValid = isValid;
+      _isKeyValid = result.isValid;
+      _apiKeyMessage = result.message;
     });
   }
 
@@ -202,16 +206,21 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
                     onPressed: () async {
                       final results = await _savePreferences();
                       if (!mounted) return;
-                      if (results != null && results.isNotEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(_describeSchedule(results), style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
-                            backgroundColor: AlmaTheme.primary,
-                            duration: const Duration(seconds: 3),
-                          ),
-                        );
-                        await Future.delayed(const Duration(seconds: 3));
-                      }
+                      // Siempre confirmamos que se guardó — antes, si no
+                      // había notificaciones que programar (ej. solo
+                      // cambiaste la API key), el "Guardar" no decía nada
+                      // y parecía que no había hecho nada.
+                      final message = (results != null && results.isNotEmpty)
+                          ? 'Ajustes guardados. ${_describeSchedule(results)}'
+                          : 'Ajustes guardados correctamente.';
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(message, style: GoogleFonts.nunito(fontWeight: FontWeight.w600)),
+                          backgroundColor: AlmaTheme.primary,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                      await Future.delayed(const Duration(seconds: 2));
                       if (!mounted) return;
                       widget.onBack();
                     },
@@ -275,6 +284,27 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
         Text('LLAVE DE API (API KEY)', style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.bold, color: AlmaTheme.primary, letterSpacing: 1.2)),
         const SizedBox(height: 8),
         Text('Tu API Key se guarda localmente en tu dispositivo y nunca se comparte.', style: GoogleFonts.nunito(fontSize: 12, color: AlmaTheme.mutedForeground)),
+        const SizedBox(height: 6),
+        // Estado real de lo que se cargó de este dispositivo al abrir la
+        // pantalla — para comprobar a simple vista si el guardado local
+        // realmente sobrevivió a un cierre/reapertura de la app, sin
+        // depender de la memoria de nadie.
+        Row(
+          children: [
+            Icon(
+              widget.apiKey.isNotEmpty ? Icons.check_circle_outline : Icons.info_outline,
+              size: 14,
+              color: widget.apiKey.isNotEmpty ? Colors.greenAccent : AlmaTheme.accent,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              widget.apiKey.isNotEmpty
+                  ? 'Key guardada en este dispositivo (${widget.apiKey.length} caracteres).'
+                  : 'No hay ninguna key guardada en este dispositivo todavía.',
+              style: GoogleFonts.nunito(fontSize: 11, color: AlmaTheme.mutedForeground),
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
 
         Row(
@@ -324,9 +354,11 @@ class _SettingsViewState extends State<SettingsView> with SingleTickerProviderSt
                 size: 16,
               ),
               const SizedBox(width: 6),
-              Text(
-                _isKeyValid! ? 'API Key válida y lista para usar.' : 'API Key inválida o sin conexión.',
-                style: GoogleFonts.nunito(color: _isKeyValid! ? Colors.greenAccent : Colors.redAccent, fontSize: 12),
+              Expanded(
+                child: Text(
+                  _apiKeyMessage ?? (_isKeyValid! ? 'API Key válida y lista para usar.' : 'API Key inválida o sin conexión.'),
+                  style: GoogleFonts.nunito(color: _isKeyValid! ? Colors.greenAccent : Colors.redAccent, fontSize: 12),
+                ),
               ),
             ],
           ),

@@ -263,23 +263,51 @@ class HomeView extends StatelessWidget {
         ...affirmationsList.take(6).map(
           (a) => Container(
             margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: AlmaTheme.card,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AlmaTheme.border),
             ),
-            child: Row(
-              children: [
-                const Text('◆', style: TextStyle(color: AlmaTheme.primary, fontSize: 10)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    a.text,
-                    style: GoogleFonts.nunito(fontSize: 13, color: Colors.white70, height: 1.35),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {},
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [AlmaTheme.primary.withOpacity(0.3), AlmaTheme.primary.withOpacity(0.08)],
+                          ),
+                        ),
+                        child: const Icon(Icons.format_quote_rounded, size: 15, color: AlmaTheme.primary),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          a.text,
+                          style: GoogleFonts.lora(
+                            fontSize: 13.5,
+                            fontStyle: FontStyle.italic,
+                            color: Colors.white.withOpacity(0.9),
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),

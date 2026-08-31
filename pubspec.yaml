@@ -87,10 +87,10 @@ flutter_launcher_icons:
   ios: false
   web:
     generate: true
-    image_path: "icon.jpg"
-  image_path: "icon.jpg"
+    image_path: "assets/alma_icon_full.png"
+  image_path: "assets/alma_icon_full.png"
   adaptive_icon_background: "#0D0C1D"
-  adaptive_icon_foreground: "icon.jpg"
+  adaptive_icon_foreground: "assets/alma_icon_foreground.png"
 
   # To add assets to your application, add an assets section, like this:
   # assets:
